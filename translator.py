@@ -7,6 +7,7 @@
 #    - 2008.08: multiple bugfixes by migius (AKA Remigiusz Fiedler)
 #    - 2009.05: bugfixes by jan (AKA Jan Diederich)
 #    - 2009.08: bugfixed by nico (AKA Nicolai Wojke, Labor Bilderkennen Uni-Koblenz)
+#    - 2010.12: standardization by secretrobotron (AKA Bobby Richter)
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -26,6 +27,9 @@
 # --------------------------------------------------------------------------
 
 # History
+# 2010.12.10 by secretrobotron:
+# - output is standard instead of DCC
+# - intangents/outtangents are exported
 # 2009.08.22 by nico:
 # - Fixed a bug where visual scene nodes containing instances of nodes in the nodes library, 
 #   which themselves instantiate geometry in the geometry library, where not imported
@@ -1544,7 +1548,6 @@ class Animation(object):
 				inTangentArray.data.append(value['intangent'][1])
 				outTangentArray.data.append(value['outtangent'][0]/self.document.fps)
 				outTangentArray.data.append(value['outtangent'][1])
-				#Debug.Debug(str(value), 'FEEDBACK')
 
 				daeFloatArrayInput.data.append(key/self.document.fps)
 				interpolation = value['interpolation']
@@ -1571,7 +1574,6 @@ class Animation(object):
 					else:
 						prevZ = value['Z']
 
-					Debug.Debug(name[-1], 'FEEDBACK')
 					outputArray.data.append(value[name[-1]])
 					#outputArray.data.append(value['bezier'])
 					#outputArray.data.append(value['X'])
@@ -1673,7 +1675,7 @@ class Animation(object):
 		#IN TANGENTS
 		daeSourceInTangent = collada.DaeSource()
 		daeSourceInTangent.id = self.document.CreateID(daeAnimation.id,'-intangents')
-		inTangentArray = collada.DaeNameArray()
+		inTangentArray = collada.DaeFloatArray()
 		inTangentArray.id = self.document.CreateID(daeSourceInTangent.id,'-array')
 		daeSourceInTangent.source = inTangentArray
 		daeSourceInTangent.techniqueCommon = collada.DaeSource.DaeTechniqueCommon()
@@ -1687,7 +1689,7 @@ class Animation(object):
 		#OUT TANGENTS
 		daeSourceOutTangent = collada.DaeSource()
 		daeSourceOutTangent.id = self.document.CreateID(daeAnimation.id,'-outtangents')
-		outTangentArray = collada.DaeNameArray()
+		outTangentArray = collada.DaeFloatArray()
 		outTangentArray.id = self.document.CreateID(daeSourceOutTangent.id,'-array')
 		daeSourceOutTangent.source = outTangentArray
 		daeSourceOutTangent.techniqueCommon = collada.DaeSource.DaeTechniqueCommon()
