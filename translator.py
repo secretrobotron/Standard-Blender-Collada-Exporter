@@ -455,7 +455,9 @@ class DocumentTranslator(object):
 		Blender.Window.DrawProgressBar(0.98, 'Saving file to disk...')
 
 		self.colladaDocument.SaveDocumentToFile(fileName)
-		
+
+		SceneNode.virtual_meshes = {}
+
 		Blender.Window.DrawProgressBar(1.0, 'Export finished.')
 
 	def Progress(self):
@@ -1395,21 +1397,26 @@ class Animation(object):
 		global sampleAnimation
 		animations = None
 		curves = ipo.getCurves()
+		#Debug.Debug('STD: ' + ipo.name, 'FEEDBACK')
+		#Debug.Debug(ipo.name, 'FEEDBACK')
 		if not curves is None:
 			animations = dict()
 
 			for curve in curves:
+				#Debug.Debug("1 " + str(animations.keys()), 'FEEDBACK')
 				cName = curve.getName()
+				#Debug.Debug("2 " + "\t" + cName, 'FEEDBACK')
 				interpolation = curve.getInterpolation()
 				#interpolation = curve.interpolation
 				if debprn: print 'deb: interpolation=', interpolation #--------
 				if cName.startswith("Loc") or cName.startswith("Rot") or cName.startswith("Scale"):
 					if cName.startswith("Loc"):
-						n = collada.DaeSyntax.TRANSLATE + "." + cName[3:]
+						n = collada.DaeSyntax.TRANSLATE + "." + cName[-1]
+						#Debug.Debug("3 \t\t" + n, 'FEEDBACK')
 					elif cName.startswith("Scale"):
 						n = collada.DaeSyntax.SCALE
 					else:
-						n = collada.DaeSyntax.ROTATE+cName[-1]
+						n = collada.DaeSyntax.ROTATE + cName[-1]
 					ani = animations.setdefault(n,{})
 
 					# Get all the framenumbers for the current curve.
@@ -1474,6 +1481,8 @@ class Animation(object):
 				else:
 					pass
 
+				#Debug.Debug("4 " + str(animations.keys()), 'FEEDBACK')
+
 		eulers = self.GetEulerAnimations(ipo, targetDaeNode, joint, bPose, bParentMatrix, bArmatureObject)
 		eulerKeys = eulers.keys()
 
@@ -1499,8 +1508,10 @@ class Animation(object):
 			anitz['Y'] = euler.y
 			anitz['Z'] = euler.z
 
+		#Debug.Debug(str(animations.keys()), 'FEEDBACK')
 		# add animations to collada
 		for name, animation in animations.iteritems():
+			#Debug.Debug("6 " + "\t\t" + name, 'FEEDBACK')
 			daeAnimation = collada.DaeAnimation()
 			daeAnimation.id = daeAnimation.name = self.document.CreateID(targetDaeNode.id+'-'+name,'-Animation')
 
@@ -1544,11 +1555,6 @@ class Animation(object):
 			for key in animationKeys:
 				value = animation[key]
 
-				inTangentArray.data.append(value['intangent'][0]/self.document.fps)
-				inTangentArray.data.append(value['intangent'][1])
-				outTangentArray.data.append(value['outtangent'][0]/self.document.fps)
-				outTangentArray.data.append(value['outtangent'][1])
-
 				daeFloatArrayInput.data.append(key/self.document.fps)
 				interpolation = value['interpolation']
 				if interpolation == 'Constant':
@@ -1557,6 +1563,12 @@ class Animation(object):
 					cInterpolation = 'LINEAR'
 				else:
 					cInterpolation = 'BEZIER'
+
+				if interpolation != 'Linear':
+					inTangentArray.data.append(value['intangent'][0]/self.document.fps)
+					inTangentArray.data.append(value['intangent'][1])
+					outTangentArray.data.append(value['outtangent'][0]/self.document.fps)
+					outTangentArray.data.append(value['outtangent'][1])
 
 				if name.startswith(collada.DaeSyntax.TRANSLATE) or name == collada.DaeSyntax.SCALE:
 					if value['X'] is None:
@@ -1704,6 +1716,8 @@ class Animation(object):
 
 
 class SceneNode(object):
+
+	virtual_meshes = {}
 
 	def __init__(self, document, sceneNode):
 		self.id = ''
@@ -2194,6 +2208,11 @@ class SceneNode(object):
 			if daeGeometry is None:							   
 				derivedObjsMatrices = BPyObject.getDerivedObjects(bNode)
 				for derivedObject, matrix in derivedObjsMatrices:
+					#Debug.Debug('\n--------------------------------------------------','FEEDBACK')
+					#Debug.Debug('\t========================================', 'FEEDBACK')
+					#for bMesh in Blender.Mesh.Get():
+						#Debug.Debug('\tbMesh:' + str(bMesh),'FEEDBACK')
+					#Debug.Debug('\t========================================', 'FEEDBACK')
 					virtualMesh = BPyMesh.getMeshFromObject(derivedObject, \
 									self.document.containerMesh, applyModifiers, False, bScene)					
 					if debprn:
@@ -2206,14 +2225,64 @@ class SceneNode(object):
 						# it gets a "Mesh" instead of a "NMesh".) 
 						print("Error while trying to save derived object / apply modifiers. Try saving " \
 							  + "more direct, all modifiers will be ignored.")
-						daeGeometry = meshNode.SaveToDae(bNode.getData(mesh=1))
+						mesh = bNode.getData(mesh=True)
+						#Debug.Debug('Mesh is non-virtual: ' + mesh.name, 'FEEDBACK')
+						daeGeometry = meshNode.SaveToDae(mesh)
 					else:
 						# Apply original name from untransformed object
 						# to transformed object (name is later copied 1:1 to id).
 						virtualMesh.name = derivedObject.name
+						real_mesh = bNode.getData(mesh=True)
+						obj_mod_list = bNode.modifiers
+						found_mesh = None
+						found_name = None
+						#Debug.Debug("Resolving mesh: " + real_mesh.name, 'FEEDBACK')
+						#Debug.Debug("Mesh List: " + str(SceneNode.virtual_meshes.keys()), 'FEEDBACK')
+						try:
+							mod_lists = SceneNode.virtual_meshes[real_mesh.name]
+
+							#Debug.Debug(real_mesh.name + " was stored. Checking modifier lists...", "FEEDBACK")
+
+							#for mod_list, maybe_mesh, name in mod_lists:
+							for mod_list, name in mod_lists:
+								found_mods = 0
+								for i in range(len(obj_mod_list)):
+									for j in range(len(mod_list)):
+										m1 = obj_mod_list[i]
+										m2 = obj_mod_list[j]
+										if m1.name == m2.name and m1.type == m2.type:
+											found_mods += 1
+											break
+								if found_mods == len(mod_list):
+									#found_mesh = maybe_mesh
+									found_name = name
+									#Debug.Debug("Found: " + maybe_mesh.name, 'FEEDBACK')
+									#Debug.Debug("Found: " + name, 'FEEDBACK')
+									break
+
+							if found_name != None:
+								#virtualMesh = found_mesh
+								virtualMesh.name = found_name
+							else:
+								#Debug.Debug("Found Nothing...", "FEEDBACK")
+								virtualMesh.name = real_mesh.name + "-V" + ("%03d" % (len(SceneNode.virtual_meshes[real_mesh.name]),))
+								#new_list = [(obj_mod_list, virtualMesh, str(virtualMesh.name))]
+								new_list = [(obj_mod_list, str(virtualMesh.name))]
+								SceneNode.virtual_meshes[real_mesh.name] = new_list
+										
+						except KeyError, e:
+							#Debug.Debug(str(e), 'FEEDBACK')
+							#Debug.Debug("Wasn't stored yet: " + real_mesh.name, "FEEDBACK")
+							base_name = real_mesh.name
+							virtualMesh.name = real_mesh.name + "-V000"
+							#new_list = [(obj_mod_list, virtualMesh, str(virtualMesh.name))]
+							new_list = [(obj_mod_list, str(virtualMesh.name))]
+							SceneNode.virtual_meshes[real_mesh.name] = new_list
+
 						# _Don't_ apply transformation matrix "matrix"!
 						# The transformation will get instead written in the file itself
 						# seperately!
+						#Debug.Debug("Saving Mesh: " + virtualMesh.name, 'FEEDBACK')
 						daeGeometry = meshNode.SaveToDae(virtualMesh)
 					
 			meshID = daeGeometry.id
@@ -2221,7 +2290,6 @@ class SceneNode(object):
 													daeGeometry.uvTextures, daeGeometry.uvIndex)
 			instance.object = daeGeometry
 			instance.bindMaterials = bindMaterials
-
 
 			instanceController = None
 			# Check if this mesh is skinned to an amarture.
@@ -2268,6 +2336,8 @@ class SceneNode(object):
 			else:
 				daeNode.iControllers.append(instanceController)
 
+			virtualMesh.name = "~tmp-mesh"
+
 		elif type == 'Camera':
 			instance = collada.DaeCameraInstance()
 			daeCamera = self.document.colladaDocument.camerasLibrary.FindObject(bNode.getData(True))
@@ -2295,6 +2365,107 @@ class SceneNode(object):
 			ipo = bNode.ipo
 			animation = Animation(self.document)
 			animation.SaveToDae(ipo, daeNode)
+			if type == 'Camera':
+				bCamera = bNode.getData()
+				ipo = bCamera.getIpo()
+				#Debug.Debug('Saving Camera Animation','FEEDBACK')
+
+				if ipo != None:
+					for curve in ipo.getCurves():
+						if curve.name.startswith('Lens'):
+			        ## FOV
+							interpolation = curve.getInterpolation().upper()
+							frames = curve.bezierPoints
+							daeAnimation, daeSampler, daeArrayIn, daeAccessorIn, daeArrayOut, daeAccessorOut, daeArrayInterp, daeAccessorInterp, daeArrayInTan, daeAccessorInTan, daeArrayOutTan, daeAccessorOutTan = create_dae_sources('fov', self.document, bNode.getName(), len(frames), "FOV")
+
+							for frame in frames:
+								fovOut = 2.0*math.atan(16.0/frame.vec[1][1])*(180.0/math.pi)
+								fovInTan = 2.0*math.atan(16.0/frame.vec[0][1])*(180.0/math.pi)
+								fovOutTan = 2.0*math.atan(16.0/frame.vec[2][1])*(180.0/math.pi)
+								daeArrayIn.data.append(frame.vec[1][0]/self.document.fps)
+								daeArrayOut.data.append(fovOut)
+								daeArrayInterp.data.append(interpolation)
+								daeArrayInTan.data.append(frame.vec[0][0]/self.document.fps)
+								daeArrayInTan.data.append(fovInTan)
+								daeArrayOutTan.data.append(frame.vec[2][0]/self.document.fps)
+								daeArrayOutTan.data.append(fovOutTan)
+
+							daeAccessorIn.count = len(daeArrayIn.data)
+							daeAccessorOut.count = len(daeArrayOut.data)
+							daeAccessorInterp.count = len(daeArrayInterp.data)
+							daeAccessorInTan.count = len(daeArrayInTan.data)/2
+							daeAccessorOutTan.count = len(daeArrayOutTan.data)/2
+
+							daeAnimation.samplers.append(daeSampler)
+
+							daeChannel = collada.DaeChannel()
+							daeChannel.source = daeSampler
+							daeChannel.target = bCamera.getName() + '/FOV'
+							daeAnimation.channels.append(daeChannel)
+
+							self.document.colladaDocument.animationsLibrary.AddItem(daeAnimation)
+
+            # Begin attempt to add clipping animation
+						elif curve.name.startswith('ClEnd'):
+							interpolation = curve.getInterpolation().upper()
+							frames = curve.bezierPoints
+							daeAnimation, daeSampler, daeArrayIn, daeAccessorIn, daeArrayOut, daeAccessorOut, daeArrayInterp, daeAccessorInterp, daeArrayInTan, daeAccessorInTan, daeArrayOutTan, daeAccessorOutTan = create_dae_sources('zfar', self.document, bNode.getName(), len(frames), "ZFAR")
+
+							for frame in frames:
+								daeArrayIn.data.append(frame.vec[1][0]/self.document.fps)
+								daeArrayOut.data.append(frame.vec[1][1])
+								daeArrayInterp.data.append(interpolation)
+								daeArrayInTan.data.append(frame.vec[0][0]/self.document.fps)
+								daeArrayInTan.data.append(frame.vec[0][1])
+								daeArrayOutTan.data.append(frame.vec[2][0]/self.document.fps)
+								daeArrayOutTan.data.append(frame.vec[2][1])
+
+							daeAccessorIn.count = len(daeArrayIn.data)
+							daeAccessorOut.count = len(daeArrayOut.data)
+							daeAccessorInterp.count = len(daeArrayInterp.data)
+							daeAccessorInTan.count = len(daeArrayInTan.data)/2
+							daeAccessorOutTan.count = len(daeArrayOutTan.data)/2
+
+							daeAnimation.samplers.append(daeSampler)
+
+							daeChannel = collada.DaeChannel()
+							daeChannel.source = daeSampler
+							daeChannel.target = bCamera.getName() + '/ZFAR'
+							daeAnimation.channels.append(daeChannel)
+
+							self.document.colladaDocument.animationsLibrary.AddItem(daeAnimation)
+
+
+						elif curve.name.startswith('ClSta'):
+							interpolation = curve.getInterpolation().upper()
+							frames = curve.bezierPoints
+							daeAnimation, daeSampler, daeArrayIn, daeAccessorIn, daeArrayOut, daeAccessorOut, daeArrayInterp, daeAccessorInterp, daeArrayInTan, daeAccessorInTan, daeArrayOutTan, daeAccessorOutTan = create_dae_sources('znear', self.document, bNode.getName(), len(frames), "ZNEAR")
+
+							for frame in frames:
+								daeArrayIn.data.append(frame.vec[1][0]/self.document.fps)
+								daeArrayOut.data.append(frame.vec[1][1])
+								daeArrayInterp.data.append(interpolation)
+								daeArrayInTan.data.append(frame.vec[0][0]/self.document.fps)
+								daeArrayInTan.data.append(frame.vec[0][1])
+								daeArrayOutTan.data.append(frame.vec[2][0]/self.document.fps)
+								daeArrayOutTan.data.append(frame.vec[2][1])
+
+							daeAccessorIn.count = len(daeArrayIn.data)
+							daeAccessorOut.count = len(daeArrayOut.data)
+							daeAccessorInterp.count = len(daeArrayInterp.data)
+							daeAccessorInTan.count = len(daeArrayInTan.data)/2
+							daeAccessorOutTan.count = len(daeArrayOutTan.data)/2
+
+							daeAnimation.samplers.append(daeSampler)
+
+							daeChannel = collada.DaeChannel()
+							daeChannel.source = daeSampler
+							daeChannel.target = bCamera.getName() + '/ZNEAR'
+							daeAnimation.channels.append(daeChannel)
+
+							self.document.colladaDocument.animationsLibrary.AddItem(daeAnimation)
+
+
 
 		# Export layer information.
 		daeNode.layer = ['L'+str(layer) for layer in bNode.layers]
@@ -2644,6 +2815,8 @@ class ArmatureNode(object):
 
 
 class MeshNode(object):
+	meshes = {}
+
 	def __init__(self,document):
 		self.document = document
 		self.materials = []
@@ -2899,8 +3072,20 @@ class MeshNode(object):
 		uvTextures = dict()
 		uvIndex = dict()
 
+		#Debug.Debug("SAVING MESH NODE: " + mesh.name, 'FEEDBACK')
+		daeGeometry = None
+		try:
+			daeGeometry = MeshNode.meshes[mesh.name]
+			#Debug.Debug("MESH ALREADY STORED: " + mesh.name, 'FEEDBACK')
+			return daeGeometry
+		except:
+			#Debug.Debug("MESH NOT STORED YET: " + mesh.name, 'FEEDBACK')
+			pass
+
 		daeGeometry = collada.DaeGeometry()
+		MeshNode.meshes[mesh.name] = daeGeometry
 		daeGeometry.id = daeGeometry.name = self.document.CreateID(mesh.name,'-Geometry')
+		#Debug.Debug("GEOMETRY NAME: " + daeGeometry.name, 'FEEDBACK')
 
 		daeMesh = collada.DaeMesh()
 
@@ -3516,6 +3701,7 @@ class CameraNode(object):
 
 
 	def SaveToDae(self, bCamera):
+
 		daeCamera = collada.DaeCamera()
 		daeCamera.id = daeCamera.name = self.document.CreateID(bCamera.name,'-Camera')
 		daeOptics = collada.DaeOptics()
@@ -3532,7 +3718,7 @@ class CameraNode(object):
 
 		daeOptics.techniqueCommon = daeTechniqueCommon
 		daeCamera.optics = daeOptics
-
+		
 		self.document.colladaDocument.camerasLibrary.AddItem(daeCamera)
 		return daeCamera
 
@@ -3592,6 +3778,9 @@ class LampNode(object):
 			daeTechniqueCommon = collada.DaeLight.DaeAmbient()
 		elif bLamp.type == Blender.Lamp.Types.Lamp: # Point light
 			daeTechniqueCommon = collada.DaeLight.DaePoint()
+			# Export intensity and distance
+			daeTechniqueCommon.intensity = bLamp.getEnergy()
+			daeTechniqueCommon.distance = bLamp.getDist()
 		elif bLamp.type == Blender.Lamp.Types.Spot: # Spot
 			daeTechniqueCommon = collada.DaeLight.DaeSpot()
 			daeTechniqueCommon.constantAttenuation = 1-bLamp.energy
@@ -3607,7 +3796,76 @@ class LampNode(object):
 		daeLight.techniqueCommon = daeTechniqueCommon
 
 		self.document.colladaDocument.lightsLibrary.AddItem(daeLight)
+
+		ipo = bLamp.getIpo()
+		if ipo != None:
+			for curve in ipo.getCurves():
+				curve_name = curve.getName()
+				frames = curve.bezierPoints
+				daeAnimation, daeSampler, daeArrayIn, daeAccessorIn, daeArrayOut, daeAccessorOut, daeArrayInterp, daeAccessorInterp, daeArrayInTan, daeAccessorInTan, daeArrayOutTan, daeAccessorOutTan = create_dae_sources(curve_name, self.document, bLamp.name, len(frames), curve_name.upper())
+				interpolation = curve.getInterpolation().upper()
+				for frame in frames:
+					daeArrayIn.data.append(frame.vec[0][0]/self.document.fps)
+					daeArrayOut.data.append(frame.vec[1][1])
+					daeArrayInterp.data.append(interpolation)
+					daeArrayInTan.data.append(frame.vec[0][0]/self.document.fps)
+					daeArrayInTan.data.append(frame.vec[0][1])
+					daeArrayOutTan.data.append(frame.vec[2][0]/self.document.fps)
+					daeArrayOutTan.data.append(frame.vec[2][1])
+
+				daeAccessorIn.count = len(daeArrayIn.data)
+				daeAccessorOut.count = len(daeArrayOut.data)
+				daeAccessorInterp.count = len(daeArrayInterp.data)
+				daeAccessorInTan.count = len(daeArrayInTan.data)/2
+				daeAccessorOutTan.count = len(daeArrayOutTan.data)/2
+
+				daeAnimation.samplers.append(daeSampler)
+
+				daeChannel = collada.DaeChannel()
+				daeChannel.source = daeSampler
+				daeChannel.target = bLamp.name + curve_name.upper()
+				daeAnimation.channels.append(daeChannel)
+
+				self.document.colladaDocument.animationsLibrary.AddItem(daeAnimation)
+
 		return daeLight
+
+def create_dae_sources(name, document, base_name, size, out_name):
+	daeAnimation = collada.DaeAnimation()
+	daeAnimation.id = daeAnimation.name = document.CreateID(base_name,'-' + name)
+	daeSampler = collada.DaeSampler()
+	daeSampler.id = document.CreateID(daeAnimation.id,'-sampler')
+	daeArrayIn, daeAccessorIn = create_dae_source(document, daeAnimation, daeSampler, 'input',[['TIME','float']],'INPUT', 'float', size)
+	daeArrayOut, daeAccessorOut = create_dae_source(document, daeAnimation, daeSampler, 'output',[[out_name,'float']],'OUTPUT', 'float', size)
+	daeArrayInterp, daeAccessorInterp = create_dae_source(document, daeAnimation, daeSampler, 'interpolation',[[out_name,'Name']],'INTERPOLATION','Name', size)
+	daeArrayInTan, daeAccessorInTan = create_dae_source(document, daeAnimation, daeSampler, 'intangents',[['X','float'],['Y','float']],'IN_TANGENT','float', size)
+	daeArrayOutTan, daeAccessorOutTan = create_dae_source(document, daeAnimation, daeSampler, 'outtangents',[['X','float'],['Y','float']],'OUT_TANGENT','float', size)
+	return daeAnimation, daeSampler, daeArrayIn, daeAccessorIn, daeArrayOut, daeAccessorOut, daeArrayInterp, daeAccessorInterp, daeArrayInTan, daeAccessorInTan, daeArrayOutTan, daeAccessorOutTan
+
+	
+def create_dae_source(document, daeAnimation, daeSampler, name,params,semantic,array_type,size):
+	daeSource = collada.DaeSource()
+	daeSource.id = document.CreateID(daeAnimation.id,'-'+name)
+	daeArray = None
+	if array_type == 'Name':
+		daeArray = collada.DaeNameArray()
+	else:
+		daeArray = collada.DaeFloatArray()
+	daeArray.id = document.CreateID(daeSource.id, '-array')
+	daeSource.source = daeArray
+	daeSource.techniqueCommon = collada.DaeSource.DaeTechniqueCommon()
+	accessor = collada.DaeAccessor()
+	daeSource.techniqueCommon.accessor = accessor
+	accessor.source = daeArray.id
+	accessor.count = size 
+	for param in params:
+		accessor.AddParam(param[0], param[1])
+	daeInput = collada.DaeInput()
+	daeInput.semantic = semantic
+	daeInput.source = daeSource.id
+	daeAnimation.sources.append(daeSource)
+	daeSampler.inputs.append(daeInput)
+	return daeArray, accessor
 
 class Library(object):
 	def __init__(self, document):
