@@ -1541,16 +1541,20 @@ class Animation(object):
 			daeSourceOutTangent = vals[6]
 			outTangentArray = vals[7]
 
-			daeAnimation.sources.append(daeSourceInput)
-			daeAnimation.sources.append(daeSourceOutput)
-			daeAnimation.sources.append(daeSourceInterpolation)
-			daeAnimation.sources.append(daeSourceInTangent)
-			daeAnimation.sources.append(daeSourceOutTangent)
-
 			animationKeys = animation.keys()
 			animationKeys.sort()
 
 			prevX = prevY = prevZ = 0
+
+			interpolation_type = animation[animationKeys[0]]['interpolation'].upper()
+			#Debug.Debug(interpolation_type, 'FEEDBACK')
+
+			daeAnimation.sources.append(daeSourceInput)
+			daeAnimation.sources.append(daeSourceOutput)
+			daeAnimation.sources.append(daeSourceInterpolation)
+			if interpolation_type == 'BEZIER': 
+				daeAnimation.sources.append(daeSourceInTangent)
+				daeAnimation.sources.append(daeSourceOutTangent)
 
 			for key in animationKeys:
 				value = animation[key]
@@ -1564,11 +1568,10 @@ class Animation(object):
 				else:
 					cInterpolation = 'BEZIER'
 
-				if interpolation != 'Linear':
-					inTangentArray.data.append(value['intangent'][0]/self.document.fps)
-					inTangentArray.data.append(value['intangent'][1])
-					outTangentArray.data.append(value['outtangent'][0]/self.document.fps)
-					outTangentArray.data.append(value['outtangent'][1])
+				inTangentArray.data.append(value['intangent'][0]/self.document.fps)
+				inTangentArray.data.append(value['intangent'][1])
+				outTangentArray.data.append(value['outtangent'][0]/self.document.fps)
+				outTangentArray.data.append(value['outtangent'][1])
 
 				if name.startswith(collada.DaeSyntax.TRANSLATE) or name == collada.DaeSyntax.SCALE:
 					if value['X'] is None:
@@ -1622,16 +1625,17 @@ class Animation(object):
 				daeInputInterpolation.source = daeSourceInterpolation.id
 				daeSampler.inputs.append(daeInputInterpolation)
 
-				daeInputInTangent = collada.DaeInput()
-				daeInputInTangent.semantic = 'IN_TANGENT'
-				daeInputInTangent.source = daeSourceInTangent.id
-				daeSampler.inputs.append(daeInputInTangent)
+				if interpolation_type == 'BEZIER': 
+					daeInputInTangent = collada.DaeInput()
+					daeInputInTangent.semantic = 'IN_TANGENT'
+					daeInputInTangent.source = daeSourceInTangent.id
+					daeSampler.inputs.append(daeInputInTangent)
 				
-				daeInputOutTangent = collada.DaeInput()
-				daeInputOutTangent.semantic = 'OUT_TANGENT'
-				daeInputOutTangent.source = daeSourceOutTangent.id
-				daeSampler.inputs.append(daeInputOutTangent)
-				
+					daeInputOutTangent = collada.DaeInput()
+					daeInputOutTangent.semantic = 'OUT_TANGENT'
+					daeInputOutTangent.source = daeSourceOutTangent.id
+					daeSampler.inputs.append(daeInputOutTangent)
+
 				daeChannel = collada.DaeChannel()
 				daeChannel.source = daeSampler
 
@@ -2376,7 +2380,7 @@ class SceneNode(object):
 			        ## FOV
 							interpolation = curve.getInterpolation().upper()
 							frames = curve.bezierPoints
-							daeAnimation, daeSampler, daeArrayIn, daeAccessorIn, daeArrayOut, daeAccessorOut, daeArrayInterp, daeAccessorInterp, daeArrayInTan, daeAccessorInTan, daeArrayOutTan, daeAccessorOutTan = create_dae_sources('fov', self.document, bNode.getName(), len(frames), "FOV")
+							daeAnimation, daeSampler, daeArrayIn, daeAccessorIn, daeArrayOut, daeAccessorOut, daeArrayInterp, daeAccessorInterp, daeArrayInTan, daeAccessorInTan, daeArrayOutTan, daeAccessorOutTan = create_dae_sources('fov', self.document, bNode.getName(), len(frames), "FOV", interpolation == 'BEZIER')
 
 							for frame in frames:
 								fovOut = 2.0*math.atan(16.0/frame.vec[1][1])*(180.0/math.pi)
@@ -2385,16 +2389,19 @@ class SceneNode(object):
 								daeArrayIn.data.append(frame.vec[1][0]/self.document.fps)
 								daeArrayOut.data.append(fovOut)
 								daeArrayInterp.data.append(interpolation)
-								daeArrayInTan.data.append(frame.vec[0][0]/self.document.fps)
-								daeArrayInTan.data.append(fovInTan)
-								daeArrayOutTan.data.append(frame.vec[2][0]/self.document.fps)
-								daeArrayOutTan.data.append(fovOutTan)
+								#Debug.Debug(interpolation, 'FEEDBACK')
+								if interpolation == 'BEZIER':
+									daeArrayInTan.data.append(frame.vec[0][0]/self.document.fps)
+									daeArrayInTan.data.append(fovInTan)
+									daeArrayOutTan.data.append(frame.vec[2][0]/self.document.fps)
+									daeArrayOutTan.data.append(fovOutTan)
 
 							daeAccessorIn.count = len(daeArrayIn.data)
 							daeAccessorOut.count = len(daeArrayOut.data)
 							daeAccessorInterp.count = len(daeArrayInterp.data)
-							daeAccessorInTan.count = len(daeArrayInTan.data)/2
-							daeAccessorOutTan.count = len(daeArrayOutTan.data)/2
+							if interpolation == 'BEZIER':
+								daeAccessorInTan.count = len(daeArrayInTan.data)/2
+								daeAccessorOutTan.count = len(daeArrayOutTan.data)/2
 
 							daeAnimation.samplers.append(daeSampler)
 
@@ -2409,22 +2416,24 @@ class SceneNode(object):
 						elif curve.name.startswith('ClEnd'):
 							interpolation = curve.getInterpolation().upper()
 							frames = curve.bezierPoints
-							daeAnimation, daeSampler, daeArrayIn, daeAccessorIn, daeArrayOut, daeAccessorOut, daeArrayInterp, daeAccessorInterp, daeArrayInTan, daeAccessorInTan, daeArrayOutTan, daeAccessorOutTan = create_dae_sources('zfar', self.document, bNode.getName(), len(frames), "ZFAR")
+							daeAnimation, daeSampler, daeArrayIn, daeAccessorIn, daeArrayOut, daeAccessorOut, daeArrayInterp, daeAccessorInterp, daeArrayInTan, daeAccessorInTan, daeArrayOutTan, daeAccessorOutTan = create_dae_sources('zfar', self.document, bNode.getName(), len(frames), "ZFAR", interpolation == 'BEZIER')
 
 							for frame in frames:
 								daeArrayIn.data.append(frame.vec[1][0]/self.document.fps)
 								daeArrayOut.data.append(frame.vec[1][1])
 								daeArrayInterp.data.append(interpolation)
-								daeArrayInTan.data.append(frame.vec[0][0]/self.document.fps)
-								daeArrayInTan.data.append(frame.vec[0][1])
-								daeArrayOutTan.data.append(frame.vec[2][0]/self.document.fps)
-								daeArrayOutTan.data.append(frame.vec[2][1])
+								if interpolation == 'BEZIER':
+									daeArrayInTan.data.append(frame.vec[0][0]/self.document.fps)
+									daeArrayInTan.data.append(frame.vec[0][1])
+									daeArrayOutTan.data.append(frame.vec[2][0]/self.document.fps)
+									daeArrayOutTan.data.append(frame.vec[2][1])
 
 							daeAccessorIn.count = len(daeArrayIn.data)
 							daeAccessorOut.count = len(daeArrayOut.data)
 							daeAccessorInterp.count = len(daeArrayInterp.data)
-							daeAccessorInTan.count = len(daeArrayInTan.data)/2
-							daeAccessorOutTan.count = len(daeArrayOutTan.data)/2
+							if interpolation == 'BEZIER':
+								daeAccessorInTan.count = len(daeArrayInTan.data)/2
+								daeAccessorOutTan.count = len(daeArrayOutTan.data)/2
 
 							daeAnimation.samplers.append(daeSampler)
 
@@ -2439,22 +2448,24 @@ class SceneNode(object):
 						elif curve.name.startswith('ClSta'):
 							interpolation = curve.getInterpolation().upper()
 							frames = curve.bezierPoints
-							daeAnimation, daeSampler, daeArrayIn, daeAccessorIn, daeArrayOut, daeAccessorOut, daeArrayInterp, daeAccessorInterp, daeArrayInTan, daeAccessorInTan, daeArrayOutTan, daeAccessorOutTan = create_dae_sources('znear', self.document, bNode.getName(), len(frames), "ZNEAR")
+							daeAnimation, daeSampler, daeArrayIn, daeAccessorIn, daeArrayOut, daeAccessorOut, daeArrayInterp, daeAccessorInterp, daeArrayInTan, daeAccessorInTan, daeArrayOutTan, daeAccessorOutTan = create_dae_sources('znear', self.document, bNode.getName(), len(frames), "ZNEAR", interpolation == 'BEZIER')
 
 							for frame in frames:
 								daeArrayIn.data.append(frame.vec[1][0]/self.document.fps)
 								daeArrayOut.data.append(frame.vec[1][1])
 								daeArrayInterp.data.append(interpolation)
-								daeArrayInTan.data.append(frame.vec[0][0]/self.document.fps)
-								daeArrayInTan.data.append(frame.vec[0][1])
-								daeArrayOutTan.data.append(frame.vec[2][0]/self.document.fps)
-								daeArrayOutTan.data.append(frame.vec[2][1])
+								if interpolation == 'BEZIER':
+									daeArrayInTan.data.append(frame.vec[0][0]/self.document.fps)
+									daeArrayInTan.data.append(frame.vec[0][1])
+									daeArrayOutTan.data.append(frame.vec[2][0]/self.document.fps)
+									daeArrayOutTan.data.append(frame.vec[2][1])
 
 							daeAccessorIn.count = len(daeArrayIn.data)
 							daeAccessorOut.count = len(daeArrayOut.data)
 							daeAccessorInterp.count = len(daeArrayInterp.data)
-							daeAccessorInTan.count = len(daeArrayInTan.data)/2
-							daeAccessorOutTan.count = len(daeArrayOutTan.data)/2
+							if interpolation == 'BEZIER':
+								daeAccessorInTan.count = len(daeArrayInTan.data)/2
+								daeAccessorOutTan.count = len(daeArrayOutTan.data)/2
 
 							daeAnimation.samplers.append(daeSampler)
 
@@ -3802,16 +3813,17 @@ class LampNode(object):
 			for curve in ipo.getCurves():
 				curve_name = curve.getName()
 				frames = curve.bezierPoints
-				daeAnimation, daeSampler, daeArrayIn, daeAccessorIn, daeArrayOut, daeAccessorOut, daeArrayInterp, daeAccessorInterp, daeArrayInTan, daeAccessorInTan, daeArrayOutTan, daeAccessorOutTan = create_dae_sources(curve_name, self.document, bLamp.name, len(frames), curve_name.upper())
 				interpolation = curve.getInterpolation().upper()
+				daeAnimation, daeSampler, daeArrayIn, daeAccessorIn, daeArrayOut, daeAccessorOut, daeArrayInterp, daeAccessorInterp, daeArrayInTan, daeAccessorInTan, daeArrayOutTan, daeAccessorOutTan = create_dae_sources(curve_name, self.document, bLamp.name, len(frames), curve_name.upper(), interpolation == 'BEZIER')
 				for frame in frames:
 					daeArrayIn.data.append(frame.vec[0][0]/self.document.fps)
 					daeArrayOut.data.append(frame.vec[1][1])
 					daeArrayInterp.data.append(interpolation)
-					daeArrayInTan.data.append(frame.vec[0][0]/self.document.fps)
-					daeArrayInTan.data.append(frame.vec[0][1])
-					daeArrayOutTan.data.append(frame.vec[2][0]/self.document.fps)
-					daeArrayOutTan.data.append(frame.vec[2][1])
+					if interpolation == 'BEZIER':
+						daeArrayInTan.data.append(frame.vec[0][0]/self.document.fps)
+						daeArrayInTan.data.append(frame.vec[0][1])
+						daeArrayOutTan.data.append(frame.vec[2][0]/self.document.fps)
+						daeArrayOutTan.data.append(frame.vec[2][1])
 
 				daeAccessorIn.count = len(daeArrayIn.data)
 				daeAccessorOut.count = len(daeArrayOut.data)
@@ -3830,7 +3842,7 @@ class LampNode(object):
 
 		return daeLight
 
-def create_dae_sources(name, document, base_name, size, out_name):
+def create_dae_sources(name, document, base_name, size, out_name, create_tangents=True):
 	daeAnimation = collada.DaeAnimation()
 	daeAnimation.id = daeAnimation.name = document.CreateID(base_name,'-' + name)
 	daeSampler = collada.DaeSampler()
@@ -3838,8 +3850,10 @@ def create_dae_sources(name, document, base_name, size, out_name):
 	daeArrayIn, daeAccessorIn = create_dae_source(document, daeAnimation, daeSampler, 'input',[['TIME','float']],'INPUT', 'float', size)
 	daeArrayOut, daeAccessorOut = create_dae_source(document, daeAnimation, daeSampler, 'output',[[out_name,'float']],'OUTPUT', 'float', size)
 	daeArrayInterp, daeAccessorInterp = create_dae_source(document, daeAnimation, daeSampler, 'interpolation',[[out_name,'Name']],'INTERPOLATION','Name', size)
-	daeArrayInTan, daeAccessorInTan = create_dae_source(document, daeAnimation, daeSampler, 'intangents',[['X','float'],['Y','float']],'IN_TANGENT','float', size)
-	daeArrayOutTan, daeAccessorOutTan = create_dae_source(document, daeAnimation, daeSampler, 'outtangents',[['X','float'],['Y','float']],'OUT_TANGENT','float', size)
+	daeArrayInTan = daeAccessorInTan = daeArrayOutTan = daeAccessorOutTan = None
+	if create_tangents == True:
+		daeArrayInTan, daeAccessorInTan = create_dae_source(document, daeAnimation, daeSampler, 'intangents',[['X','float'],['Y','float']],'IN_TANGENT','float', size)
+		daeArrayOutTan, daeAccessorOutTan = create_dae_source(document, daeAnimation, daeSampler, 'outtangents',[['X','float'],['Y','float']],'OUT_TANGENT','float', size)
 	return daeAnimation, daeSampler, daeArrayIn, daeAccessorIn, daeArrayOut, daeAccessorOut, daeArrayInterp, daeAccessorInterp, daeArrayInTan, daeAccessorInTan, daeArrayOutTan, daeAccessorOutTan
 
 	
