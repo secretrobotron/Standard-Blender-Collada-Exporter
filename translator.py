@@ -1569,9 +1569,13 @@ class Animation(object):
 					cInterpolation = 'BEZIER'
 
 				inTangentArray.data.append(value['intangent'][0]/self.document.fps)
-				inTangentArray.data.append(value['intangent'][1])
 				outTangentArray.data.append(value['outtangent'][0]/self.document.fps)
-				outTangentArray.data.append(value['outtangent'][1])
+				if name.startswith(collada.DaeSyntax.ROTATE):
+					inTangentArray.data.append(value['intangent'][1]*10)
+					outTangentArray.data.append(value['outtangent'][1]*10)
+				else:
+					inTangentArray.data.append(value['intangent'][1])
+					outTangentArray.data.append(value['outtangent'][1])
 
 				if name.startswith(collada.DaeSyntax.TRANSLATE) or name == collada.DaeSyntax.SCALE:
 					if value['X'] is None:
