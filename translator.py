@@ -3839,7 +3839,12 @@ class LampNode(object):
 
 				daeChannel = collada.DaeChannel()
 				daeChannel.source = daeSampler
-				daeChannel.target = bLamp.name + curve_name.upper()
+				cname = curve_name
+				if cname == 'Energ':
+					cname = 'intensity'
+				elif cname == 'Dist':
+					cname = 'distance'
+				daeChannel.target = bLamp.name + "/" + cname 
 				daeAnimation.channels.append(daeChannel)
 
 				self.document.colladaDocument.animationsLibrary.AddItem(daeAnimation)
