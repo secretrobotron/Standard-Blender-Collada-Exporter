@@ -138,6 +138,7 @@ class Translator(object):
 class DocumentTranslator(object):
 	isImport = None
 	ids = []
+	light_ids = []
 	sceneGraph = None
 
 	# Keep track of the layers on import
@@ -195,6 +196,25 @@ class DocumentTranslator(object):
 		self.axisTransformMatrix = Matrix()
 		self.inverseAxisTransformMatrix  = Matrix()
 		self.orgAxiss = ["X","Y","Z"]
+
+	def CreateLightID(self, name, typeName=None):
+		if len(name) > 0 and not name[0].isalpha():
+			name = "i"+name
+
+		if not (name in self.light_ids):
+			self.light_ids.append(name)
+			return name
+		else:
+			tempName = name
+			if not(typeName is None) and name.rfind(typeName) >= 0:
+				# Check for existing number at the end?
+				return self.IncrementString(tempName, True)
+			else:
+				# First check if no Blender Object exists with the name 'tempName + typeName'
+				if (tempName + typeName) in self.allBlenderNames:
+					return self.IncrementString(tempName + typeName, True)
+				else:
+					return self.CreateID(tempName+typeName, typeName)
 
 	def CreateID(self, name, typeName=None):
 		if len(name) > 0 and not name[0].isalpha():
@@ -2359,7 +2379,7 @@ class SceneNode(object):
 			daeLight = self.document.colladaDocument.lightsLibrary.FindObject(bNode.getData(True))
 			if daeLight is None:
 				lampNode = LampNode(self.document)
-				daeLight = lampNode.SaveToDae(bNode.getData())
+				daeLight = lampNode.SaveToDae(bNode.getData(), bNode)
 			instance.object = daeLight
 			daeNode.iLights.append(instance)
 		elif type == 'Armature':
@@ -3784,9 +3804,9 @@ class LampNode(object):
 
 		return lamp
 
-	def SaveToDae(self, bLamp):
+	def SaveToDae(self, bLamp, bNode=None):
 		daeLight = collada.DaeLight()
-		daeLight.id = daeLight.name = self.document.CreateID(bLamp.name,'-Light')
+		daeLight.id = daeLight.name = self.document.CreateLightID(bLamp.name,'-Light')
 
 		daeTechniqueCommon = None
 		if bLamp.type == Blender.Lamp.Types.Hemi: # Ambient
@@ -3809,8 +3829,6 @@ class LampNode(object):
 
 		daeTechniqueCommon.color = bLamp.col
 		daeLight.techniqueCommon = daeTechniqueCommon
-
-		self.document.colladaDocument.lightsLibrary.AddItem(daeLight)
 
 		ipo = bLamp.getIpo()
 		if ipo != None:
@@ -3844,10 +3862,17 @@ class LampNode(object):
 					cname = 'intensity'
 				elif cname == 'Dist':
 					cname = 'distance'
-				daeChannel.target = bLamp.name + "/" + cname 
+				bname = bLamp.name
+				if bNode != None:
+					# ultra-hilarious hackaroo
+					bname = bNode.getName()# + "-Node"
+				bname = bname.replace('.','_')
+				daeChannel.target = bname + "/" + cname 
 				daeAnimation.channels.append(daeChannel)
 
 				self.document.colladaDocument.animationsLibrary.AddItem(daeAnimation)
+
+		self.document.colladaDocument.lightsLibrary.AddItem(daeLight)
 
 		return daeLight
 
